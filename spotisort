@@ -61,10 +61,11 @@ def choose_songs(songs):
     print("==> Songs to exclude (eg: \"1 2 3\", \"1-4\" or \"1 3 6-9\"):")
     ch = input("==> ")
     for exc in ch.split(" "):
-        start = int(exc.split("-")[0]) - 1
-        end = int(exc.split("-")[-1])
-        for i in range(start, end):
-            songs[i] = None
+        if exc:
+            start = int(exc.split("-")[0]) - 1
+            end = int(exc.split("-")[-1])
+            for i in range(start, end):
+                songs[i] = None
     return [i for i in songs if i]
 
 
@@ -122,8 +123,6 @@ def main():
     playlists = choose_playlist(user_playlists)
     songs = get_songs(sp, playlists["starting_playlist"], is_starting=True)
     songs_to_sort = get_songs(sp, playlists["playlist_to_sort"])
-    print(songs)
-    return
     for s in songs:
         print(":: Moving", s["name"], "by", s["artist"])
         position = get_position(s, songs_to_sort)
