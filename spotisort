@@ -1,0 +1,152 @@
+#!/bin/python3
+
+import configparser
+
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+
+config = configparser.ConfigParser()
+config.read("config.ini")
+USER = config["spotisort"]["user"]
+CLIENT_ID = config["spotisort"]["client_id"]
+CLIENT_SECRET = config["spotisort"]["client_secret"]
+REDIRECT_URI = config["spotisort"]["redirect_uri"]
+SCOPE = config["spotisort"]["scope"]
+
+
+def get_position(song, songs_to_sort):
+    position = 0
+    for s in songs_to_sort:
+        if song["album"] == s["album"]:
+            if s["track_number"] > song["track_number"]:
+                break
+            else:
+                position += 1
+        else:
+            release_date = song["release_date"]
+            item_release_date = s["release_date"]
+            try:
+                if int(item_release_date.split("-")[0]) > int(release_date.split("-")[0]):
+                    position += 1
+                elif int(item_release_date.split("-")[0]) < int(release_date.split("-")[0]):
+                    break
+                elif len(release_date.split("-")) != 1 and len(item_release_date.split("-")) != 1:
+                    if int(item_release_date.split("-")[1]) > int(release_date.split("-")[1]):
+                        position += 1
+                    elif int(item_release_date.split("-")[1]) < int(release_date.split("-")[1]):
+                        break
+                    else:
+                        if int(item_release_date.split("-")[2]) > int(release_date.split("-")[2]):
+                            position += 1
+                        elif int(item_release_date.split("-")[2]) < int(release_date.split("-")[2]):
+                            break
+                        else:
+                            position += 1
+                elif len(release_date.split("-")) == 1:
+                    position += 1
+                elif len(item_release_date.split("-")) == 1:
+                    break
+            except AttributeError:
+                # Local Music
+                position += 1
+    return position
+
+
+def choose_songs(songs):
+    print(f":: Songs to move into your playlist")
+    for i, s in zip(range(len(songs)), songs):
+        print(i + 1, " ", s["artist"], "-", s["name"])
+    print("==> Songs to exclude (eg: \"1 2 3\", \"1-4\"):")
+    ch = input("==> ")
+    if not ch:
+        return songs
+    elif "-" in ch:
+        start = int(ch[0])
+        end = int(ch[-1]) + 1
+        index_list = [i for i in range(start, end)]
+    else:
+        index_list = ch.split(" ")
+    for i in index_list:
+        songs[int(i) - 1] = None
+    while 1:
+        for i in range(len(songs)):
+            if songs[int(i)] is None:
+                del songs[int(i)]
+                break
+        else:
+            return songs
+
+
+def get_songs(sp, playlist, is_starting=False):
+    offset = 0
+    songs = []
+    while 1:
+        playlist_items = sp.playlist_items(playlist, limit=100, offset=offset) 
+        if not playlist_items["items"]:
+            break
+        else:
+            for item in playlist_items["items"]:
+                track_id = item["track"]["id"]
+                name = item["track"]["name"]
+                artist = item["track"]["artists"][0]["name"]
+                album = item["track"]["album"]["name"]
+                release_date = item["track"]["album"]["release_date"]
+                track_number = item["track"]["track_number"]
+                songs.append({
+                    "id": track_id,
+                    "name": name,
+                    "artist": artist,
+                    "album": album,
+                    "release_date": release_date,
+                    "track_number": track_number
+                })
+            offset += 100
+        if is_starting:
+            songs = choose_songs(songs)
+    return songs
+
+
+def choose_playlist(user_playlists):
+    print(":: Your playlists")
+    for i, p in zip(range(len(user_playlists)), user_playlists):
+        print(i + 1, " ", p["name"])
+    print("==> Choose the starting playlist (eg: \"1\" or \"2\"): ")
+    starting_playlist = int(input("==> "))
+    print("==> Choose the playlist to sort (eg: \"1\" or \"2\"): ")
+    playlist_to_sort = int(input("==> "))
+    return {"starting_playlist": user_playlists[starting_playlist - 1]["id"],
+            "playlist_to_sort": user_playlists[playlist_to_sort - 1]["id"]}
+
+
+def main():
+    sp = spotipy.Spotify(
+        auth_manager=SpotifyOAuth(
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            redirect_uri=REDIRECT_URI,
+            scope=SCOPE
+        )
+    )
+    user_playlists = sp.current_user_playlists(limit=50, offset=0)["items"]
+    playlists = choose_playlist(user_playlists)
+    songs = get_songs(sp, playlists["starting_playlist"], is_starting=True)
+    songs_to_sort = get_songs(sp, playlists["playlist_to_sort"])
+    for s in songs:
+        print(":: Moving", s["name"], "by", s["artist"])
+        position = get_position(s, songs_to_sort)
+        songs_to_sort.insert(position, s)
+        sp.playlist_add_items(
+            playlist_id=playlists["playlist_to_sort"],
+            items=[s["id"]],
+            position=position
+        )
+        sp.user_playlist_remove_all_occurrences_of_tracks(
+            user=USER,
+            playlist_id=playlists["starting_playlist"],
+            tracks=[s["id"]]
+        )
+    print("Operation completed!")
+
+
+if __name__ == "__main__":
+    main()
