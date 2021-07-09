@@ -1,12 +1,14 @@
 #!/bin/python3
 
 import configparser
+from pathlib import Path
 
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 
+path = str(Path(__file__).parent) + "/config.ini"
 config = configparser.ConfigParser()
-config.read("config.ini")
+config.read(path)
 USER = config["spotisort"]["user"]
 CLIENT_ID = config["spotisort"]["client_id"]
 CLIENT_SECRET = config["spotisort"]["client_secret"]
@@ -56,25 +58,14 @@ def choose_songs(songs):
     print(f":: Songs to move into your playlist")
     for i, s in zip(range(len(songs)), songs):
         print(i + 1, " ", s["artist"], "-", s["name"])
-    print("==> Songs to exclude (eg: \"1 2 3\", \"1-4\"):")
+    print("==> Songs to exclude (eg: \"1 2 3\", \"1-4\" or \"1 3 6-9\"):")
     ch = input("==> ")
-    if not ch:
-        return songs
-    elif "-" in ch:
-        start = int(ch[0])
-        end = int(ch[-1]) + 1
-        index_list = [i for i in range(start, end)]
-    else:
-        index_list = ch.split(" ")
-    for i in index_list:
-        songs[int(i) - 1] = None
-    while 1:
-        for i in range(len(songs)):
-            if songs[int(i)] is None:
-                del songs[int(i)]
-                break
-        else:
-            return songs
+    for exc in ch.split(" "):
+        start = int(exc.split("-")[0]) - 1
+        end = int(exc.split("-")[-1])
+        for i in range(start, end):
+            songs[i] = None
+    return [i for i in songs if i]
 
 
 def get_songs(sp, playlist, is_starting=False):
@@ -131,6 +122,8 @@ def main():
     playlists = choose_playlist(user_playlists)
     songs = get_songs(sp, playlists["starting_playlist"], is_starting=True)
     songs_to_sort = get_songs(sp, playlists["playlist_to_sort"])
+    print(songs)
+    return
     for s in songs:
         print(":: Moving", s["name"], "by", s["artist"])
         position = get_position(s, songs_to_sort)
