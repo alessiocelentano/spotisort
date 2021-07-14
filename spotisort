@@ -6,14 +6,16 @@ from pathlib import Path
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 
-path = str(Path(__file__).parent) + "/config.ini"
+path = str(Path(__file__).parent)
 config = configparser.ConfigParser()
-config.read(path)
+config.read(path + "/config.ini")
+
 USER = config["spotisort"]["user"]
 CLIENT_ID = config["spotisort"]["client_id"]
 CLIENT_SECRET = config["spotisort"]["client_secret"]
 REDIRECT_URI = config["spotisort"]["redirect_uri"]
 SCOPE = config["spotisort"]["scope"]
+CACHE_PATH = path + "/.cache"
 
 
 def get_position(song, songs_to_sort):
@@ -93,8 +95,8 @@ def get_songs(sp, playlist, is_starting=False):
                     "track_number": track_number
                 })
             offset += 100
-        if is_starting:
-            songs = choose_songs(songs)
+    if is_starting:
+        songs = choose_songs(songs)
     return songs
 
 
@@ -116,7 +118,8 @@ def main():
             client_id=CLIENT_ID,
             client_secret=CLIENT_SECRET,
             redirect_uri=REDIRECT_URI,
-            scope=SCOPE
+            scope=SCOPE,
+            cache_path=CACHE_PATH
         )
     )
     user_playlists = sp.current_user_playlists(limit=50, offset=0)["items"]
