@@ -26,7 +26,7 @@ $ sudo chmod 777 /usr/local/bin/.cache
 If `.cache` doesn't exist, run Spotisort first.
 
 ## Usage
-Run `./spotisort`, add your songs in a throwaway playlist (in the screenshot above I called it "Add Later") and select the playlist you want to add songs to. The script will delete songs from the throwaway playlist and add them to the chosen playlist. Additionally you can exclude some songs in case you have multiple playlists.
+Run `./spotisort`, add your songs in a throwaway playlist (in the screenshot below I called it "Add Later") and select the playlist you want to add songs to. The script will delete songs from the throwaway playlist and add them to the chosen playlist. Additionally you can exclude some songs in case you have multiple playlists.
 
 ![screenshot](images/screenshot.png)
 
