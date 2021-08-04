@@ -10,7 +10,7 @@ Spotisort is a small script to sort Spotify playlists by release date. It allows
 
 ## Installation
 ```
-git clone https://github.com/alessiocelentano/spotisort
+git clone https://github.com/Nastybox/spotisort
 ```
  
 Remember to edit `config.ini` with the data you got from the Spotify app.
