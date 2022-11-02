@@ -42,14 +42,13 @@ def get_song_release_date(genius_client, song):
 
 
 def get_song_new_position(song, songs, genius_client=None):
-    # TODO: Double album bug
     song_release_date = get_song_release_date(genius_client, song)
     album_found = False
     for index in range(len(songs)):
         current_song = songs[index]
         if song["album"] == current_song["album"]:
             album_found = True
-            if song["track_number"] > current_song["track_number"]:
+            if song["disc_number"] == current_song["disc_number"] and song["track_number"] > current_song["track_number"]:
                 return index
         elif album_found:
             # Last song of an album added to the playlist
@@ -94,7 +93,8 @@ def get_playlist_songs(spotify_client, playlist):
                 "artist": item["track"]["artists"][0]["name"],
                 "album": item["track"]["album"]["name"],
                 "release_date": item["track"]["album"]["release_date"],
-                "track_number": item["track"]["track_number"]
+                "track_number": item["track"]["track_number"],
+                "disc_number": item["track"]["disc_number"]
             })
         offset += 100
     return songs  
