@@ -11,7 +11,6 @@ from genius import Genius
 cwd = str(Path(__file__).parent)
 config = configparser.ConfigParser()
 config.read(cwd + "/config.ini")
-
 USER = config["spotify"]["user"]
 CLIENT_ID = config["spotify"]["client_id"]
 CLIENT_SECRET = config["spotify"]["client_secret"]
@@ -19,7 +18,19 @@ REDIRECT_URI = config["spotify"]["redirect_uri"]
 SCOPE = config["spotify"]["scope"]
 GENIUS_TOKEN = config["genius"]["token"]
 CACHE_PATH = cwd + "/.cache"
+MAX_SONGS_TO_PROMPT = 100
+API_SONGS_LIMIT = 100
 
+spotify_client = spotipy.Spotify(
+        auth_manager=SpotifyOAuth(
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            redirect_uri=REDIRECT_URI,
+            scope=SCOPE,
+            cache_path=CACHE_PATH
+        )
+    )
+genius_client = Genius(GENIUS_TOKEN)
 album_cache = {}
 
 
@@ -28,7 +39,7 @@ def update_cache(song, release_date):
     album_cache[album_name] = release_date
 
 
-def get_song_release_date(genius_client, song):
+def get_song_release_date(song, logs=False):
         album_name = "{} {}".format(song["album"], song["artist"])
         if album_name in album_cache:
             return album_cache[album_name]
@@ -43,83 +54,87 @@ def get_song_release_date(genius_client, song):
             if match.album and match.album.name == song["album"]:
                 return match.release_date
 
-        print("<< Can't find an accurate release date on Spotify and Genius for >>")
-        print("{} (setted automatically on {}-1-1)".format(song["name"], song["release_date"]))
+        # FIX: too many errors with Genius
+        if logs:
+            print("<< Couldn't find an accurate release date on Spotify and Genius for >>")
+            print("{} (setted automatically on {}-1-1)".format(song["name"], song["release_date"]))
         return datetime(int(song["release_date"]), 1, 1)
 
 
-def get_song_new_position(song, songs, genius_client=None):
-    song_release_date = get_song_release_date(genius_client, song)
+def get_song_new_position(song, playlist_songs, songs_to_sort):
+    song_release_date = get_song_release_date(song, logs=True)
     album_found = False
-    for index in range(len(songs)):
-        current_song = songs[index]
-        if song["album"] == current_song["album"]:
-            album_found = True
-            if song["disc_number"] == current_song["disc_number"] and song["track_number"] > current_song["track_number"]:
-                return index
-        elif album_found:
-            # Last song of an album added to the playlist
-            return index
-        else:
-            current_song_release_date = get_song_release_date(genius_client, current_song)
-            update_cache(current_song, current_song_release_date)
-            if song_release_date >= current_song_release_date:
-                return index
-    return index
 
+    for index in range(len(playlist_songs)):
+        current_playlist_song = playlist_songs[index]
 
-def sort_entire_playlist(spotify_client, playlist_id, songs):
-    genius_client = Genius(GENIUS_TOKEN)
-    song_release_dates = []
-    for song in songs:
-        release_date = get_song_release_date(genius_client, song)
-        song_release_dates.append([song, release_date])
-        update_cache(song, release_date)
-    
-    # FIX: album not in order
-    song_release_dates = [song[0] for song in sorted(song_release_dates, key=lambda x: x[1], reverse=True)]
-
-    for i in range(len(song_release_dates)):
-        if song_release_dates[i]["id"] != songs[i]["id"]:
-            spotify_client.playlist_reorder_items(
-                playlist_id=playlist_id,
-                range_start=songs.index(song_release_dates[i]),
-                insert_before=i
-            )
-            songs.remove(song_release_dates[i])
-            songs.insert(i, song_release_dates[i])
-
-
-def choose_songs(songs):
-    res = []
-    # Latest 100 songs added to playlist as the first to be listed
-    last_songs = songs[::-1][:20]
-    print(f":: Last 100 songs of this playlist")
-    # Reverse order for a better view
-    for index, song in zip(range(len(last_songs), 0, -1), last_songs[::-1]):
-        print(index, " ", song["artist"], "-", song["name"])
-    print("==> Songs to sort (eg: \"1 2 3\", \"1-4\", or \"all\"):")
-    ch = input("==> ")
-    if ch == "all":
-        return songs
-    for group in ch.split(" "):
-        if not group:
+        if current_playlist_song in songs_to_sort:
             continue
-        start = int(group.split("-")[0])
-        end = int(group.split("-")[-1]) + 1
-        for i in range(start, end):
-            res.append(last_songs[i - 1])
+
+        # Same album, just check track number (and disc number for double disc albums)
+        elif song["album"] == current_playlist_song["album"]:
+            album_found = True
+            if song["disc_number"] == current_playlist_song["disc_number"] and song["track_number"] < current_playlist_song["track_number"]:
+                return index
+
+        # Exit from album, it's certainly the last track of the album among those added
+        elif album_found:
+            return index - 1
+
+        else:
+            current_playlist_song_release_date = get_song_release_date(current_playlist_song)
+            update_cache(current_playlist_song, current_playlist_song_release_date)
+            if song_release_date > current_playlist_song_release_date:
+                return index
+
+    return index + 1
+
+
+def sort_playlist(playlist_id, playlist_songs, songs_to_sort):
+    for song in songs_to_sort:
+        print(":: Sorting", song["name"], "by", song["artist"])
+        song_start_position = playlist_songs.index(song)
+        song_new_position = get_song_new_position(song, playlist_songs, songs_to_sort)
+        spotify_client.playlist_reorder_items(
+            playlist_id=playlist_id,
+            range_start=song_start_position,
+            insert_before=song_new_position
+        )
+        playlist_songs.remove(song)
+        playlist_songs.insert(song_new_position - 1, song)
+        songs_to_sort[songs_to_sort.index(song)] = None
+
+
+def choose_songs_to_sort(playlist_songs, choice):
+    if choice == "all":
+        return playlist_songs[::-1]
+    res = []
+    for group in choice.split(" "):
+        if group:
+            start = int(group.split("-")[0])
+            end = int(group.split("-")[-1]) + 1
+            for i in range(start, end):
+                res.append(playlist_songs[i - 1])
     return res
 
 
-def get_playlist_songs(spotify_client, playlist):
+def last_songs_of_playlist_prompt(last_songs):
+    lines = [f":: Last {MAX_SONGS_TO_PROMPT} songs of this playlist"]
+    # Reverse order for a better view
+    for index, song in zip(range(len(last_songs), 0, -1), last_songs[::-1]):
+        lines.append("{:<5}{} - {}".format(index, song["artist"], song["name"]))
+    lines.append("==> Songs to sort (eg: \"1 2 3\", \"1-4\", or \"all\"):")
+    lines.append("==> ")
+    return "\n".join(lines)
+
+
+def get_playlist_songs(spotify_client, playlist_id, playlist_length):
     songs = []
     offset = 0
-    while True:
-        playlist_items = spotify_client.playlist_items(playlist["id"], limit=100, offset=offset)
-        if not playlist_items["items"]:
-            break
-        for item in playlist_items["items"]:
+    for offset in range(0, playlist_length, API_SONGS_LIMIT):
+        # We increment offset because the maximum value of limit is 100
+        playlist_items = spotify_client.playlist_items(playlist_id, limit=API_SONGS_LIMIT, offset=offset)["items"]
+        for item in playlist_items:
             songs.append({
                 "id": item["track"]["id"],
                 "name": item["track"]["name"],
@@ -129,57 +144,31 @@ def get_playlist_songs(spotify_client, playlist):
                 "track_number": item["track"]["track_number"],
                 "disc_number": item["track"]["disc_number"]
             })
-        offset += 100
     return songs  
 
 
-def choose_playlist(user_playlists):
-    print(":: Your playlists")
+def all_user_playlists_prompt(user_playlists):
+    lines = [":: Your playlists"]
     # Reverse order for a better view
     for index, playlist in zip(range(len(user_playlists), 0, -1), user_playlists[::-1]):
-        print(index, " ", playlist["name"])
-    print("==> Choose the playlist to sort (eg: \"1\" or \"2\"): ")
-    playlist_index = int(input("==> "))
-    return user_playlists[playlist_index - 1]
-
-
-def get_spotify_client():
-    return spotipy.Spotify(
-        auth_manager=SpotifyOAuth(
-            client_id=CLIENT_ID,
-            client_secret=CLIENT_SECRET,
-            redirect_uri=REDIRECT_URI,
-            scope=SCOPE,
-            cache_path=CACHE_PATH
-        )
-    )
+        lines.append("{:<5}{}".format(index, playlist["name"]))
+    lines.append("==> Choose the playlist to sort (eg: \"1\" or \"2\"): ")
+    lines.append("==> ")
+    return "\n".join(lines)
 
 
 def main():
-    spotify_client = get_spotify_client()
-    genius_client = Genius(GENIUS_TOKEN)
-
     user_playlists = spotify_client.current_user_playlists()["items"]
-    playlist = choose_playlist(user_playlists)
-    playlist_songs = get_playlist_songs(spotify_client, playlist)
-    songs_to_sort = choose_songs(playlist_songs)
-    if len(songs_to_sort) == len(playlist_songs):
-        print("<< This may take several seconds if the playlist is very large >>")
-        sort_entire_playlist(spotify_client, playlist["id"], playlist_songs)
-    else:
-        # We assume that if the user doesn't want to sort the entire playlist
-        # the playlist is already sorted (except for the tracks selected)
-        # so we need two different functions
-        for song in songs_to_sort:
-            print(":: Sorting", song["name"], "by", song["artist"])
-            song_new_position = get_song_new_position(song, playlist_songs, genius_client=genius_client)
-            spotify_client.playlist_reorder_items(
-                playlist_id=playlist["id"],
-                range_start=playlist_songs.index(song),
-                insert_before=song_new_position
-            )
-            playlist_songs.remove(song)
-            playlist_songs.insert(song_new_position, song)
+    print(all_user_playlists_prompt(user_playlists), end="")
+    playlist = user_playlists[int(input()) - 1]
+
+    playlist_songs = get_playlist_songs(spotify_client, playlist["id"], playlist["tracks"]["total"])
+    # Latest MAX_SONGS_TO_PROMPT songs added to playlist as the first to be listed
+    print(last_songs_of_playlist_prompt(playlist_songs[::-1][:MAX_SONGS_TO_PROMPT]), end="")
+    songs_to_sort = choose_songs_to_sort(playlist_songs[::-1], input())
+
+    sort_playlist(playlist["id"], playlist_songs, songs_to_sort)
+
     print("Operation completed!")
 
 
