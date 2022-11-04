@@ -44,8 +44,9 @@ def get_song_release_date(song, logs=False):
         if album_name in album_cache:
             return album_cache[album_name]
 
-        elif len(song["release_date"].split("-")) == 3 and "-1-1" not in song["release_date"].split("-"):
+        elif song["release_date"] and len(song["release_date"].split("-")) == 3 and "-1-1" not in song["release_date"].split("-"):
             # Most of release date placeholder are year-only (e.g.: 1997) or 1 January (2004-1-1)
+            # Also, local songs don't have a release date so we have to check it
             year, month, day = song["release_date"].split("-")
             return datetime(int(year), int(month), int(day))
 
@@ -54,11 +55,14 @@ def get_song_release_date(song, logs=False):
             if match.album and match.album.name == song["album"]:
                 return match.release_date
 
-        # FIX: too many errors with Genius
         if logs:
             print("<< Couldn't find an accurate release date on Spotify and Genius for >>")
             print("{} (setted automatically on {}-1-1)".format(song["name"], song["release_date"]))
-        return datetime(int(song["release_date"]), 1, 1)
+        if song["release_date"]:
+            return datetime(int(song["release_date"]), 1, 1)
+        # If it's impossible to find a local song release date on Genius, that track is put at the end of the playlist
+        # Unless you listen some Beethoven shit
+        return datetime(1800, 1, 1)
 
 
 def get_song_new_position(song, playlist_songs, songs_to_sort):
@@ -91,9 +95,11 @@ def get_song_new_position(song, playlist_songs, songs_to_sort):
 
 
 def sort_playlist(playlist_id, playlist_songs, songs_to_sort):
+    total = len(songs_to_sort)
     while songs_to_sort:
         song = songs_to_sort.pop()
-        print(":: Sorting", song["name"], "by", song["artist"])
+        # The final combination of character move the cursor at the beginning of line
+        print(":: Sorting ({}/{})\033[A\033[2D".format(total - len(songs_to_sort), total))
         song_start_position = playlist_songs.index(song)
         song_new_position = get_song_new_position(song, playlist_songs, songs_to_sort)
         spotify_client.playlist_reorder_items(
@@ -169,7 +175,7 @@ def main():
 
     sort_playlist(playlist["id"], playlist_songs, songs_to_sort)
 
-    print("Operation completed!")
+    print("\nOperation completed!")
 
 
 if __name__ == "__main__":
