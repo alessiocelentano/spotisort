@@ -2,9 +2,10 @@
 Spotisort is a small script to sort Spotify playlists by release date. It allows your playlist to stay tidy and keep new releases always on top.
 
 ## Requirements
-- Spotipy module (`pip3 install spotipy`)
+- [Spotipy](https://github.com/spotipy-dev/spotipy) module (`pip3 install spotipy`)
 - A [Spotify app](https://developer.spotify.com/dashboard/applications)
 - To whitelist your Redirect URI in the Spotify app settings as in figure
+- [Wrap Genius](https://github.com/fedecalendino/wrap-genius) module (`pip3 install wrap-genius`)
 - A [Genius token](https://genius.com/api-clients/new) (optional)
 
 ![Redirect URI in the app settings](images/redirecturis.png)
