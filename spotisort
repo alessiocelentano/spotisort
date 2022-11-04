@@ -7,20 +7,24 @@ from datetime import datetime
 
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from genius import Genius
 
-cwd = str(Path(__file__).parent)
-config = configparser.ConfigParser()
-config.read(cwd + "/config.ini")
-USER = config["spotify"]["user"]
-CLIENT_ID = config["spotify"]["client_id"]
-CLIENT_SECRET = config["spotify"]["client_secret"]
-REDIRECT_URI = config["spotify"]["redirect_uri"]
-SCOPE = config["spotify"]["scope"]
-GENIUS_TOKEN = config["genius"]["token"]
-CACHE_PATH = cwd + "/.cache"
+CWD = str(Path(__file__).parent)
+CONFIG = configparser.ConfigParser()
+CONFIG.read(CWD + "/config.ini")
+USER = CONFIG["spotify"]["user"]
+CLIENT_ID = CONFIG["spotify"]["client_id"]
+CLIENT_SECRET = CONFIG["spotify"]["client_secret"]
+REDIRECT_URI = CONFIG["spotify"]["redirect_uri"]
+SCOPE = CONFIG["spotify"]["scope"]
+GENIUS_TOKEN = CONFIG["genius"]["token"]
+CACHE_PATH = CWD + "/.cache"
 MAX_SONGS_TO_PROMPT = 100
 API_SONGS_LIMIT = 100
+
+genius_client = None
+if GENIUS_TOKEN and "-ng" not in sys.argv and "--no-genius" not in sys.argv:
+    from genius import Genius
+    genius_client = Genius(GENIUS_TOKEN)
 
 spotify_client = spotipy.Spotify(
         auth_manager=SpotifyOAuth(
@@ -31,7 +35,6 @@ spotify_client = spotipy.Spotify(
             cache_path=CACHE_PATH
         )
     )
-genius_client = None 
 album_cache = {}
 
 
@@ -166,10 +169,6 @@ def all_user_playlists_prompt(user_playlists):
 
 
 def main(args):
-    if GENIUS_TOKEN and "-ng" not in args and "--no-genius" not in args:
-        global genius_client
-        genius_client = Genius(GENIUS_TOKEN)
-
     user_playlists = spotify_client.current_user_playlists()["items"]
     print(all_user_playlists_prompt(user_playlists), end="")
     playlist = user_playlists[int(input()) - 1]
