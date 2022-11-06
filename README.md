@@ -4,18 +4,18 @@ Spotisort is a small script to sort Spotify playlists by release date. It allows
 ## Requirements
 - [Spotipy](https://github.com/spotipy-dev/spotipy) module (`pip3 install spotipy`)
 - A [Spotify app](https://developer.spotify.com/dashboard/applications)
-- To whitelist your Redirect URI in the Spotify app settings as in figure
-- [Wrap Genius](https://github.com/fedecalendino/wrap-genius) module (`pip3 install wrap-genius`)
+- [Wrap Genius](https://github.com/fedecalendino/wrap-genius) module (`pip3 install wrap-genius`) [optional]
 - A [Genius token](https://genius.com/api-clients/new) (optional)
 
-![Redirect URI in the app settings](images/redirecturis.png)
 
 ## Installation
 ```
 git clone https://github.com/alessiocelentano/spotisort
 ```
  
-Remember to edit `config.ini` with the data you got from the Spotify app.
+Remember to edit `config.ini` with the data you got from the Spotify app. The Redirect URI inserted has to be whitelisted in the Spotify app settings as in figure.
+
+![Redirect URI in the app settings](images/redirecturis.png)
 
 ## Usage
 ``` bash
