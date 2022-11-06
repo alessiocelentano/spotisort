@@ -168,7 +168,7 @@ def all_user_playlists_prompt(user_playlists):
     return "\n".join(lines)
 
 
-def main(args):
+def main():
     user_playlists = spotify_client.current_user_playlists()["items"]
     print(all_user_playlists_prompt(user_playlists), end="")
     playlist = user_playlists[int(input()) - 1]
@@ -183,4 +183,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    main()
