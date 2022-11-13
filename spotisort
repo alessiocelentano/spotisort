@@ -113,7 +113,7 @@ def sort_playlist(playlist_id, playlist_songs, songs_to_sort):
             insert_before=song_new_position
         )
         playlist_songs.remove(song)
-        playlist_songs.insert(song_new_position - 1, song)
+        playlist_songs.insert(song_new_position, song)
 
 
 def choose_songs_to_sort(playlist_songs, choice):
