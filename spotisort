@@ -16,15 +16,9 @@ CLIENT_ID = CONFIG["spotify"]["client_id"]
 CLIENT_SECRET = CONFIG["spotify"]["client_secret"]
 REDIRECT_URI = CONFIG["spotify"]["redirect_uri"]
 SCOPE = CONFIG["spotify"]["scope"]
-GENIUS_TOKEN = CONFIG["genius"]["token"]
 CACHE_PATH = CWD + "/.cache"
 MAX_SONGS_TO_PROMPT = 100
 API_SONGS_LIMIT = 100
-
-genius_client = None
-if GENIUS_TOKEN and "-ng" not in sys.argv and "--no-genius" not in sys.argv:
-    from genius import Genius
-    genius_client = Genius(GENIUS_TOKEN)
 
 spotify_client = spotipy.Spotify(
         auth_manager=SpotifyOAuth(
@@ -43,7 +37,7 @@ def update_cache(song, release_date):
     album_cache[album_name] = release_date
 
 
-def get_song_release_date(song, logs=False):
+def get_song_release_date(song):
         album_name = "{} {}".format(song["album"], song["artist"])
         if album_name in album_cache:
             return album_cache[album_name]
@@ -54,24 +48,14 @@ def get_song_release_date(song, logs=False):
             year, month, day = song["release_date"].split("-")
             return datetime(int(year), int(month), int(day))
 
-        elif genius_client:
-            match_list = list(genius_client.search(song["name"], page=1, per_page=5))
-            for match in match_list:
-                if match.album and match.album.name == song["album"]:
-                    return match.release_date
-
-        if logs and genius_client:
-            print("<< Couldn't find an accurate release date on Spotify and Genius for >>")
-            print("{} (setted automatically on {}-1-1)".format(song["name"], song["release_date"]))
         if song["release_date"]:
             return datetime(int(song["release_date"]), 1, 1)
-        # If it's impossible to find a local song release date on Genius, that track is put at the end of the playlist
-        # Unless you listen some Beethoven shit
+
         return datetime(1800, 1, 1)
 
 
 def get_song_new_position(song, playlist_songs, songs_to_sort):
-    song_release_date = get_song_release_date(song, logs=True)
+    song_release_date = get_song_release_date(song)
     album_found = False
 
     for index in range(len(playlist_songs)):
