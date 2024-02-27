@@ -2,6 +2,7 @@
 
 import sys
 import configparser
+import json
 from pathlib import Path
 from datetime import datetime
 
@@ -10,48 +11,73 @@ from spotipy.oauth2 import SpotifyOAuth
 
 CWD = str(Path(__file__).parent)
 CONFIG = configparser.ConfigParser()
-CONFIG.read(CWD + "/config.ini")
-USER = CONFIG["spotify"]["user"]
-CLIENT_ID = CONFIG["spotify"]["client_id"]
-CLIENT_SECRET = CONFIG["spotify"]["client_secret"]
-REDIRECT_URI = CONFIG["spotify"]["redirect_uri"]
-SCOPE = CONFIG["spotify"]["scope"]
-CACHE_PATH = CWD + "/.cache"
+CONFIG.read(CWD + '/config.ini')
+USER = CONFIG['spotify']['user']
+CLIENT_ID = CONFIG['spotify']['client_id']
+CLIENT_SECRET = CONFIG['spotify']['client_secret']
+REDIRECT_URI = CONFIG['spotify']['redirect_uri']
+SCOPE = CONFIG['spotify']['scope']
+CACHE_PATH = CWD + '/.cache'
+CACHE_RELEASE_PATH = CWD + '/cache.json'
 MAX_SONGS_TO_PROMPT = 100
 API_SONGS_LIMIT = 100
 
 spotify_client = spotipy.Spotify(
-        auth_manager=SpotifyOAuth(
-            client_id=CLIENT_ID,
-            client_secret=CLIENT_SECRET,
-            redirect_uri=REDIRECT_URI,
-            scope=SCOPE,
-            cache_path=CACHE_PATH
-        )
+    auth_manager=SpotifyOAuth(
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        redirect_uri=REDIRECT_URI,
+        scope=SCOPE,
+        cache_path=CACHE_PATH
     )
+)
+
+with open(CACHE_RELEASE_PATH, 'r') as f:
+    local_cache = json.load(f)
+
 album_cache = {}
+
+last_local_song_release_date = None
 
 
 def update_cache(song, release_date):
-    album_name = "{} {}".format(song["album"], song["artist"])
+    album_name = '{} {}'.format(song['album'], song['artist'])
     album_cache[album_name] = release_date
 
 
 def get_song_release_date(song):
-        album_name = "{} {}".format(song["album"], song["artist"])
-        if album_name in album_cache:
-            return album_cache[album_name]
+    album_name = '{} {}'.format(song['album'], song['artist'])
+    if album_name in album_cache:
+        return album_cache[album_name]
 
-        elif song["release_date"] and len(song["release_date"].split("-")) == 3 and "-1-1" not in song["release_date"].split("-"):
-            # Most of release date placeholder are year-only (e.g.: 1997) or 1 January (2004-1-1)
-            # Also, local songs don't have a release date so we have to check it
-            year, month, day = song["release_date"].split("-")
-            return datetime(int(year), int(month), int(day))
+    elif song['release_date'] and len(song['release_date'].split('-')) == 3 and '-1-1' not in song['release_date'].split('-'):
+        # Most of release date placeholder are year-only (e.g.: 1997) or 1 January (2004-1-1)
+        # Also, local songs don't have a release date so we have to check it
+        year, month, day = song['release_date'].split('-')
+        return datetime(int(year), int(month), int(day))
 
-        if song["release_date"]:
-            return datetime(int(song["release_date"]), 1, 1)
+    if song['release_date']:
+        return datetime(int(song['release_date']), 1, 1)
 
-        return datetime(1800, 1, 1)
+    # Ask for a release date (for local songs) or use the cached one
+    # Format %Y-%m-%d (e.g.: 1994-10-20)
+    if song['name'] in local_cache:
+        return datetime.strptime(local_cache[song['name']], '%Y-%m-%d')
+
+    global last_local_song_release_date
+    print(f'Insert release date for {song["name"]} (YYYY-MM-DD)', end='')
+    if last_local_song_release_date is not None:
+        print(f'\nLeave blank to use the last release date inserted ({last_local_song_release_date})', end='')
+    print(': ', end='')
+    date = input()
+    if date:
+        last_local_song_release_date = date
+        local_cache[song['name']] = date
+        with open(CACHE_RELEASE_PATH, 'w') as f:
+            json.dump(local_cache, f)
+        return datetime.strptime(date, '%Y-%m-%d')
+
+    return datetime(1800, 1, 1)
 
 
 def get_song_new_position(song, playlist_songs, songs_to_sort):
@@ -65,9 +91,9 @@ def get_song_new_position(song, playlist_songs, songs_to_sort):
             continue
 
         # Same album, just check track number (and disc number for double disc albums)
-        elif song["album"] == current_playlist_song["album"]:
+        elif song['album'] == current_playlist_song['album']:
             album_found = True
-            if song["disc_number"] == current_playlist_song["disc_number"] and song["track_number"] < current_playlist_song["track_number"]:
+            if song['disc_number'] == current_playlist_song['disc_number'] and song['track_number'] < current_playlist_song['track_number']:
                 return index
 
         # Exit from album, it's certainly the last track of the album among those added
@@ -88,7 +114,7 @@ def sort_playlist(playlist_id, playlist_songs, songs_to_sort):
     while songs_to_sort:
         song = songs_to_sort.pop()
         # The final combination of character move the cursor at the beginning of line
-        print(":: Sorting ({}/{})\033[A\033[2D".format(total - len(songs_to_sort), total))
+        print(f':: Sorting ({total - len(songs_to_sort)}/{total})\033[A\033[2D')
         song_start_position = playlist_songs.index(song)
         song_new_position = get_song_new_position(song, playlist_songs, songs_to_sort)
         spotify_client.playlist_reorder_items(
@@ -100,71 +126,75 @@ def sort_playlist(playlist_id, playlist_songs, songs_to_sort):
         playlist_songs.insert(song_new_position, song)
 
 
-def choose_songs_to_sort(playlist_songs, choice):
-    if choice == "all":
+def get_songs_to_sort(playlist_songs, range_):
+    if range_ == 'all':
         return playlist_songs.copy()
     res = []
-    for group in choice.split(" "):
+    for group in range_.split(' '):
         if group:
-            start = int(group.split("-")[0])
-            end = int(group.split("-")[-1]) + 1
+            start = int(group.split('-')[0])
+            end = int(group.split('-')[-1]) + 1
             for i in range(start, end):
                 res.append(playlist_songs[-i])
     return res
 
 
-def last_songs_of_playlist_prompt(last_songs):
-    lines = [f":: Last {MAX_SONGS_TO_PROMPT} songs of this playlist"]
+def print_last_100_playlist_songs(songs):
+    lines = [f':: Last {MAX_SONGS_TO_PROMPT} songs of this playlist']
     # Reverse order for a better view
-    for index, song in zip(range(len(last_songs), 0, -1), last_songs):
-        lines.append("{:<5}{} - {}".format(index, song["artist"], song["name"]))
-    lines.append("==> Songs to sort (eg: \"1 2 3\", \"1-4\", or \"all\"):")
-    lines.append("==> ")
-    return "\n".join(lines)
+    for index, song in zip(range(len(songs), 0, -1), songs):
+        lines.append('{:<5}{} - {}'.format(index, song['artist'], song['name']))
+    lines.append('==> Songs to sort (eg: \'1 2 3\', \'1-4\', or \'all\'):')
+    lines.append('==> ')
+    print('\n'.join(lines), end='')
 
 
-def get_playlist_songs(spotify_client, playlist_id, playlist_length):
+def get_playlist_songs(playlist_id, playlist_length):
     songs = []
     offset = 0
     for offset in range(0, playlist_length, API_SONGS_LIMIT):
         # We increment offset because the maximum value of limit is 100
-        playlist_items = spotify_client.playlist_items(playlist_id, limit=API_SONGS_LIMIT, offset=offset)["items"]
+        playlist_items = spotify_client.playlist_items(playlist_id, limit=API_SONGS_LIMIT, offset=offset)['items']
         for item in playlist_items:
             songs.append({
-                "id": item["track"]["id"],
-                "name": item["track"]["name"],
-                "artist": item["track"]["artists"][0]["name"],
-                "album": item["track"]["album"]["name"],
-                "release_date": item["track"]["album"]["release_date"],
-                "track_number": item["track"]["track_number"],
-                "disc_number": item["track"]["disc_number"]
+                'id': item['track']['id'],
+                'name': item['track']['name'],
+                'artist': item['track']['artists'][0]['name'],
+                'album': item['track']['album']['name'],
+                'release_date': item['track']['album']['release_date'],
+                'track_number': item['track']['track_number'],
+                'disc_number': item['track']['disc_number']
             })
     return songs
 
 
-def all_user_playlists_prompt(user_playlists):
-    lines = [":: Your playlists"]
+def print_playlists(user_playlists):
+    lines = [':: Your playlists']
     # Reverse order for a better view
     for index, playlist in zip(range(len(user_playlists), 0, -1), user_playlists[::-1]):
-        lines.append("{:<5}{}".format(index, playlist["name"]))
-    lines.append("==> Choose the playlist to sort (eg: \"1\" or \"2\"): ")
-    lines.append("==> ")
-    return "\n".join(lines)
+        lines.append('{:<5}{}'.format(index, playlist['name']))
+    lines.append('==> Choose the playlist to sort (eg: \'1\' or \'2\'): ')
+    lines.append('==> ')
+    print('\n'.join(lines), end='')
 
 
 def main():
-    user_playlists = spotify_client.current_user_playlists()["items"]
-    print(all_user_playlists_prompt(user_playlists), end="")
-    playlist = user_playlists[int(input()) - 1]
+    user_playlists = spotify_client.current_user_playlists()['items']
+    print_playlists(user_playlists)
 
-    playlist_songs = get_playlist_songs(spotify_client, playlist["id"], playlist["tracks"]["total"])
-    print(last_songs_of_playlist_prompt(playlist_songs[-MAX_SONGS_TO_PROMPT:]), end="")
-    songs_to_sort = choose_songs_to_sort(playlist_songs, input())
+    playlist_index = int(input())
+    playlist = user_playlists[playlist_index - 1]
 
-    sort_playlist(playlist["id"], playlist_songs, songs_to_sort)
+    playlist_songs = get_playlist_songs(playlist['id'], playlist['tracks']['total'])
+    print_last_100_playlist_songs(playlist_songs[-MAX_SONGS_TO_PROMPT:])
 
-    print("\nOperation completed!")
+    range_ = input()
+    songs_to_sort = get_songs_to_sort(playlist_songs, range_)
+
+    sort_playlist(playlist['id'], playlist_songs, songs_to_sort)
+
+    print('\nOperation completed!')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
